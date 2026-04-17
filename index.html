@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GLSL Live Shader Editor - Fixed Texture Orientation</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0f;
+            font-family: 'Segoe UI', 'Fira Code', 'Monaco', monospace;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            color: #e0e0e0;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .main-panels {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #1e1e2f;
+            border-right: 1px solid #2c2c3a;
+            min-width: 300px;
+        }
+
+        .preview-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+            min-width: 300px;
+        }
+
+        .editor-header, .preview-header {
+            background: #252535;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            border-bottom: 1px solid #3a3a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .editor-actions button, .controls-panel button {
+            background: #3a3a4e;
+            border: none;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 8px;
+            transition: 0.2s;
+        }
+        .editor-actions button:hover, .controls-panel button:hover {
+            background: #5a5a7a;
+            transform: translateY(-1px);
+        }
+
+        #code-editor {
+            flex: 1;
+            background: #1e1e2f;
+            font-family: 'Fira Code', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #d4d4d4;
+            resize: none;
+            border: none;
+            outline: none;
+            padding: 16px;
+            tab-size: 4;
+            white-space: pre-wrap;
+            overflow: auto;
+        }
+
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            background: #000;
+        }
+        #gl-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .controls-panel {
+            background: #1a1a24;
+            border-top: 1px solid #2c2c3a;
+            max-height: 280px;
+            overflow-y: auto;
+            padding: 12px 16px;
+            font-size: 12px;
+        }
+
+        .examples-section, .texture-section, .error-section {
+            margin-bottom: 16px;
+        }
+
+        h4 {
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #aaaaff;
+        }
+
+        .error-box {
+            background: #2a1a1f;
+            border-left: 4px solid #ff5555;
+            padding: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ffaa99;
+            white-space: pre-wrap;
+            max-height: 100px;
+            overflow: auto;
+        }
+
+        select {
+            background: #2c2c3a;
+            border: 1px solid #3a3a4e;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-right: 8px;
+        }
+
+        .fps-counter {
+            font-family: monospace;
+            background: #000000aa;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .texture-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .texture-input-group input {
+            flex: 1;
+            background: #0f0f17;
+            border: 1px solid #3a3a4e;
+            color: white;
+            padding: 6px 8px;
+            border-radius: 4px;
+        }
+        
+        .texture-status {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 4px;
+        }
+        
+        .info-note {
+            background: #2a2a3a;
+            padding: 6px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #aaaaff;
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="main-panels">
+        <div class="editor-panel">
+            <div class="editor-header">
+                <span><span class="status-badge"></span>📝 FRAGMENT SHADER EDITOR</span>
+                <div class="editor-actions">
+                    <button id="compileBtn">▶ Compile (Ctrl+Enter)</button>
+                    <button id="saveLocalBtn">💾 Save</button>
+                    <button id="exportBtn">📎 Export</button>
+                </div>
+            </div>
+            <textarea id="code-editor" spellcheck="false"></textarea>
+        </div>
+        <div class="preview-panel">
+            <div class="preview-header">
+                <span>🎨 LIVE PREVIEW</span>
+                <span id="fpsDisplay" class="fps-counter">FPS: --</span>
+            </div>
+            <div class="canvas-container">
+                <canvas id="gl-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="controls-panel">
+        <div class="examples-section">
+            <h4>📁 EXAMPLE SHADERS</h4>
+            <select id="exampleSelect">
+                <option value="gradient">🌈 Gradient</option>
+                <option value="texture_display">🖼️ Display Texture (Fixed)</option>
+                <option value="texture_distort">🌀 Texture Distortion</option>
+                <option value="texture_glitch">📺 Texture Glitch</option>
+                <option value="plasma">🌀 Plasma Waves</option>
+                <option value="mandelbrot">🐚 Mandelbrot</option>
+            </select>
+            <button id="loadExampleBtn">Load Example</button>
+        </div>
+        <div class="texture-section">
+            <h4>🖼️ TEXTURE INPUT (iChannel0)</h4>
+            <div class="texture-input-group">
+                <input type="text" id="texUrl0" placeholder="Enter image URL" value="https://picsum.photos/512/512">
+                <button id="loadTexBtn">Load Texture</button>
+            </div>
+            <div class="texture-status" id="textureStatus"></div>
+            <div style="margin-top: 8px;">
+                <button id="testTextureBtn" style="background: #2a5a3a;">🎨 Generate Test Pattern</button>
+            </div>
+            <div class="info-note">
+                💡 Tip: Textures are automatically flipped vertically for correct orientation
+            </div>
+        </div>
+        <div class="error-section" id="errorPanel" style="display:none;">
+            <h4>⚠️ SHADER ERROR</h4>
+            <div id="errorMsg" class="error-box"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gl-canvas');
+    const editor = document.getElementById('code-editor');
+    const compileBtn = document.getElementById('compileBtn');
+    const saveBtn = document.getElementById('saveLocalBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const exampleSelect = document.getElementById('exampleSelect');
+    const loadExampleBtn = document.getElementById('loadExampleBtn');
+    const errorPanel = document.getElementById('errorPanel');
+    const errorMsgDiv = document.getElementById('errorMsg');
+    const texUrl0 = document.getElementById('texUrl0');
+    const loadTexBtn = document.getElementById('loadTexBtn');
+    const testTextureBtn = document.getElementById('testTextureBtn');
+    const textureStatus = document.getElementById('textureStatus');
+    const fpsSpan = document.getElementById('fpsDisplay');
+
+    let gl = null;
+    let program = null;
+    let currentShaderSource = "";
+    let recompileTimeout = null;
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let lastFrameTime = 0;
+    let fullscreenVAO = null;
+    
+    let uniformValues = {
+        iTime: 0.0,
+        iResolution: [canvas.clientWidth, canvas.clientHeight, 1.0],
+        iMouse: [0.0, 0.0, 0.0, 0.0],
+        iFrame: 0,
+        iDate: [2025, 4, 17, 12]
+    };
+    
+    let loadedTextures = { iChannel0: null };
+    let uniformLocations = new Map();
+    let mouseDown = false;
+
+    // Vertex shader with proper UV coordinates
+    const vertexShaderSource = `#version 300 es
+    in vec2 aPosition;
+    out vec2 vUv;
+    void main() {
+        // Pass through UV coordinates (flipped Y for texture correction)
+        vUv = aPosition * 0.5 + 0.5;
+        // Flip Y coordinate to correct texture orientation
+        vUv.y = 1.0 - vUv.y;
+        gl_Position = vec4(aPosition, 0.0, 1.0);
+    }`;
+
+    function initWebGL() {
+        gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, alpha: false });
+        if(!gl) { 
+            alert("WebGL2 not supported"); 
+            return false; 
+        }
+        gl.clearColor(0, 0, 0, 1);
+        return true;
+    }
+
+    function createFullscreenQuad() {
+        const vertices = new Float32Array([-1, -1, 3, -1, -1, 3]);
+        const vbo = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        
+        const vao = gl.createVertexArray();
+        gl.bindVertexArray(vao);
+        const posLoc = gl.getAttribLocation(program, "aPosition");
+        if(posLoc !== -1) {
+            gl.enableVertexAttribArray(posLoc);
+            gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        }
+        gl.bindVertexArray(null);
+        return vao;
+    }
+
+    function compileShader(source) {
+        if(!gl) return false;
+        
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, source);
+        gl.compileShader(fs);
+        
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+            const log = gl.getShaderInfoLog(fs);
+            errorPanel.style.display = 'block';
+            errorMsgDiv.innerText = log;
+            gl.deleteShader(fs);
+            return false;
+        }
+        
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, vertexShaderSource);
+        gl.compileShader(vs);
+        
+        if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+            errorPanel.style.display = 'block';
+            errorMsgDiv.innerText = "Vertex shader error:\n" + gl.getShaderInfoLog(vs);
+            gl.deleteShader(vs);
+            gl.deleteShader(fs);
+            return false;
+        }
+        
+        const newProgram = gl.createProgram();
+        gl.attachShader(newProgram, vs);
+        gl.attachShader(newProgram, fs);
+        gl.linkProgram(newProgram);
+        
+        if (!gl.getProgramParameter(newProgram, gl.LINK_STATUS)) {
+            errorPanel.style.display = 'block';
+            errorMsgDiv.innerText = "Link error:\n" + gl.getProgramInfoLog(newProgram);
+            gl.deleteProgram(newProgram);
+            gl.deleteShader(vs);
+            gl.deleteShader(fs);
+            return false;
+        }
+        
+        if(program) gl.deleteProgram(program);
+        program = newProgram;
+        gl.useProgram(program);
+        
+        // Recreate VAO for new program
+        if(fullscreenVAO) gl.deleteVertexArray(fullscreenVAO);
+        fullscreenVAO = createFullscreenQuad();
+        
+        // Cache uniforms
+        uniformLocations.clear();
+        const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+        for(let i = 0; i < uniformCount; i++) {
+            const info = gl.getActiveUniform(program, i);
+            if(info) {
+                const loc = gl.getUniformLocation(program, info.name);
+                if(loc) uniformLocations.set(info.name, loc);
+            }
+        }
+        
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
+        errorPanel.style.display = 'none';
+        return true;
+    }
+
+    function getFullShaderSource(userCode) {
+        return `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+uniform float iTime;
+uniform vec3 iResolution;
+uniform vec4 iMouse;
+uniform int iFrame;
+uniform vec4 iDate;
+uniform sampler2D iChannel0;
+
+out vec4 fragColor;
+
+${userCode}
+
+void main() {
+    mainImage(fragColor, gl_FragCoord.xy);
+}`;
+    }
+
+    function setShaderSourceAndCompile(src) {
+        if (!src.includes('mainImage')) {
+            src = `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    fragColor = vec4(uv, 0.5 + 0.5*sin(iTime), 1.0);
+}`;
+        }
+        
+        let fullSrc = getFullShaderSource(src);
+        editor.value = src;
+        currentShaderSource = src;
+        
+        if(compileShader(fullSrc)) {
+            updateUniformsNow();
+            return true;
+        }
+        return false;
+    }
+
+    function updateUniformsNow() {
+        if(!program || !gl) return;
+        gl.useProgram(program);
+        
+        if(uniformLocations.has('iTime')) gl.uniform1f(uniformLocations.get('iTime'), uniformValues.iTime);
+        if(uniformLocations.has('iResolution')) gl.uniform3f(uniformLocations.get('iResolution'), uniformValues.iResolution[0], uniformValues.iResolution[1], uniformValues.iResolution[2]);
+        if(uniformLocations.has('iMouse')) gl.uniform4f(uniformLocations.get('iMouse'), uniformValues.iMouse[0], uniformValues.iMouse[1], uniformValues.iMouse[2], uniformValues.iMouse[3]);
+        if(uniformLocations.has('iFrame')) gl.uniform1i(uniformLocations.get('iFrame'), uniformValues.iFrame);
+        if(uniformLocations.has('iDate')) gl.uniform4f(uniformLocations.get('iDate'), uniformValues.iDate[0], uniformValues.iDate[1], uniformValues.iDate[2], uniformValues.iDate[3]);
+        
+        // Update texture - now with correct orientation handled by vertex shader
+        if(uniformLocations.has('iChannel0') && loadedTextures.iChannel0) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, loadedTextures.iChannel0);
+            gl.uniform1i(uniformLocations.get('iChannel0'), 0);
+        }
+    }
+
+    function flipImage(img) {
+        // Create a canvas to flip the image vertically
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        
+        // Flip the image vertically
+        ctx.translate(0, canvas.height);
+        ctx.scale(1, -1);
+        ctx.drawImage(img, 0, 0);
+        
+        return canvas;
+    }
+
+    function loadTextureFromURL(url, channel = 'iChannel0') {
+        if(!gl || !url) return;
+        
+        textureStatus.innerText = 'Loading texture...';
+        textureStatus.style.color = '#ffaa66';
+        
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+            // Flip the image to correct orientation
+            const flippedCanvas = flipImage(img);
+            
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, flippedCanvas);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            
+            if(loadedTextures[channel]) gl.deleteTexture(loadedTextures[channel]);
+            loadedTextures[channel] = tex;
+            
+            textureStatus.innerText = `✓ Texture loaded: ${img.width}x${img.height} (orientation fixed)`;
+            textureStatus.style.color = '#aaffaa';
+            updateUniformsNow();
+        };
+        img.onerror = () => {
+            textureStatus.innerText = '✗ Failed to load texture. Using fallback.';
+            textureStatus.style.color = '#ffaaaa';
+            createFallbackTexture();
+        };
+        img.src = url;
+    }
+    
+    function createFallbackTexture() {
+        // Create a test pattern texture (already correctly oriented)
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Create gradient background
+        const gradient = ctx.createLinearGradient(0, 0, size, size);
+        gradient.addColorStop(0, '#ff0066');
+        gradient.addColorStop(0.2, '#ff6600');
+        gradient.addColorStop(0.4, '#ffff00');
+        gradient.addColorStop(0.6, '#00ff66');
+        gradient.addColorStop(0.8, '#0066ff');
+        gradient.addColorStop(1, '#ff00ff');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+        
+        // Draw a grid to show orientation
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 4;
+        for(let i = 0; i <= 8; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * size/8, 0);
+            ctx.lineTo(i * size/8, size);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i * size/8);
+            ctx.lineTo(size, i * size/8);
+            ctx.stroke();
+        }
+        
+        // Draw text to show correct orientation
+        ctx.fillStyle = 'white';
+        ctx.font = 'Bold 40px Arial';
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 10;
+        ctx.fillText("TOP", size/2 - 50, 60);
+        ctx.fillText("BOTTOM", size/2 - 70, size - 30);
+        ctx.font = '30px Arial';
+        ctx.fillText("Texture Test Pattern", size/2 - 150, size/2);
+        
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        
+        if(loadedTextures.iChannel0) gl.deleteTexture(loadedTextures.iChannel0);
+        loadedTextures.iChannel0 = tex;
+        updateUniformsNow();
+        
+        textureStatus.innerText = '✓ Test pattern texture loaded';
+        textureStatus.style.color = '#aaffaa';
+    }
+
+    // Example shaders with proper UV handling
+    const examples = {
+        gradient: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    fragColor = vec4(uv, 0.5 + 0.5*sin(iTime), 1.0);
+}`,
+        texture_display: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    // UV coordinates are now correctly oriented (0,0 = top-left, 1,1 = bottom-right)
+    vec4 texColor = texture(iChannel0, uv);
+    fragColor = texColor;
+}`,
+        texture_distort: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    // Wave distortion (now works correctly with fixed orientation)
+    uv.x += sin(uv.y * 20.0 + iTime * 3.0) * 0.05;
+    uv.y += cos(uv.x * 20.0 + iTime * 2.0) * 0.05;
+    
+    vec4 texColor = texture(iChannel0, uv);
+    
+    // RGB shift effect
+    float shift = sin(iTime) * 0.02;
+    float r = texture(iChannel0, uv + vec2(shift, 0)).r;
+    float g = texture(iChannel0, uv).g;
+    float b = texture(iChannel0, uv - vec2(shift, 0)).b;
+    
+    fragColor = vec4(r, g, b, 1.0);
+}`,
+        texture_glitch: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    
+    // Random glitch effect
+    float glitch = step(0.97, fract(sin(uv.y * 500.0 + iTime * 10.0) * 10000.0));
+    
+    vec2 glitchUv = uv;
+    glitchUv.x += glitch * 0.1;
+    
+    vec4 texColor = texture(iChannel0, glitchUv);
+    
+    if(glitch > 0.5) {
+        texColor = vec4(1.0, 0.0, 1.0, 1.0);
+    }
+    
+    fragColor = texColor;
+}`,
+        plasma: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    float value = sin(uv.x * 20.0 + iTime) * cos(uv.y * 20.0 - iTime);
+    vec3 col = 0.5 + 0.5*cos(vec3(0.9,0.5,0.2)*3.1415 + value);
+    fragColor = vec4(col, 1.0);
+}`,
+        mandelbrot: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    vec2 c = uv * 2.5 + vec2(-0.5, 0.0);
+    vec2 z = vec2(0.0);
+    int iter = 0;
+    for(int i = 0; i < 100; i++) {
+        if(length(z) > 2.0) break;
+        z = vec2(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        iter++;
+    }
+    float col = float(iter) / 100.0;
+    fragColor = vec4(vec3(col * 0.8, col * 0.4, col), 1.0);
+}`
+    };
+
+    function loadExample(name) {
+        const src = examples[name];
+        if(src) setShaderSourceAndCompile(src);
+    }
+
+    function renderFrame(now) {
+        if(!gl || !program) {
+            requestAnimationFrame(renderFrame);
+            return;
+        }
+        
+        let delta = Math.min(0.033, (now - lastFrameTime) / 1000);
+        lastFrameTime = now;
+        uniformValues.iTime += (delta > 0 && delta < 0.1) ? delta : 0.016;
+        uniformValues.iFrame++;
+        
+        const nowDate = new Date();
+        uniformValues.iDate = [nowDate.getFullYear(), nowDate.getMonth() + 1, nowDate.getDate(), nowDate.getHours() * 3600 + nowDate.getMinutes() * 60 + nowDate.getSeconds()];
+        
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        if(canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+            gl.viewport(0, 0, width, height);
+            uniformValues.iResolution = [width, height, 1.0];
+        }
+        
+        updateUniformsNow();
+        
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.bindVertexArray(fullscreenVAO);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        
+        frameCount++;
+        if(now - lastTime >= 1000) {
+            fpsSpan.innerText = `FPS: ${frameCount}`;
+            frameCount = 0;
+            lastTime = now;
+        }
+        
+        requestAnimationFrame(renderFrame);
+    }
+
+    function scheduleRecompile() {
+        if(recompileTimeout) clearTimeout(recompileTimeout);
+        recompileTimeout = setTimeout(() => {
+            const newSource = editor.value;
+            if(newSource === currentShaderSource) return;
+            setShaderSourceAndCompile(newSource);
+        }, 300);
+    }
+
+    // Event handlers
+    editor.addEventListener('input', scheduleRecompile);
+    compileBtn.addEventListener('click', () => setShaderSourceAndCompile(editor.value));
+    saveBtn.addEventListener('click', () => {
+        localStorage.setItem('shader_editor_code', editor.value);
+        alert('✓ Shader saved to browser storage!');
+    });
+    exportBtn.addEventListener('click', () => {
+        const blob = new Blob([editor.value], {type: "text/plain"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "shader_" + Date.now() + ".glsl";
+        a.click();
+        URL.revokeObjectURL(blob);
+    });
+    loadExampleBtn.addEventListener('click', () => loadExample(exampleSelect.value));
+    loadTexBtn.addEventListener('click', () => {
+        const url = texUrl0.value.trim();
+        if(url) loadTextureFromURL(url);
+    });
+    testTextureBtn.addEventListener('click', () => {
+        createFallbackTexture();
+    });
+    
+    // Mouse tracking
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * uniformValues.iResolution[0];
+        const y = uniformValues.iResolution[1] - ((e.clientY - rect.top) / rect.height) * uniformValues.iResolution[1];
+        uniformValues.iMouse[0] = x;
+        uniformValues.iMouse[1] = y;
+        uniformValues.iMouse[2] = mouseDown ? 1.0 : 0.0;
+    });
+    canvas.addEventListener('mousedown', (e) => { mouseDown = true; updateMousePosition(e); });
+    window.addEventListener('mouseup', () => { mouseDown = false; uniformValues.iMouse[2] = 0.0; });
+    
+    function updateMousePosition(e) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * uniformValues.iResolution[0];
+        const y = uniformValues.iResolution[1] - ((e.clientY - rect.top) / rect.height) * uniformValues.iResolution[1];
+        uniformValues.iMouse[0] = x;
+        uniformValues.iMouse[1] = y;
+    }
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            setShaderSourceAndCompile(editor.value);
+        }
+        if((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            localStorage.setItem('shader_editor_code', editor.value);
+            alert('✓ Shader saved!');
+        }
+    });
+
+    // Initialize
+    function init() {
+        if(!initWebGL()) return;
+        
+        const saved = localStorage.getItem('shader_editor_code');
+        if(saved) {
+            setShaderSourceAndCompile(saved);
+        } else {
+            setShaderSourceAndCompile(examples.texture_display);
+        }
+        
+        // Load a default texture
+        setTimeout(() => {
+            loadTextureFromURL('https://picsum.photos/512/512');
+        }, 500);
+        
+        lastFrameTime = performance.now();
+        requestAnimationFrame(renderFrame);
+    }
+    
+    init();
+</script>
+</body>
+</html>
